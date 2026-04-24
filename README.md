@@ -48,6 +48,7 @@ curl http://localhost:4000/health
 - `npm run lint` - lint source files
 - `npm run typecheck` - TypeScript type checking
 - `npm test` - run tests
+- `npm run test:contract` - run API contract compatibility tests
 - `npm run prisma:generate` - generate Prisma client
 - `npm run prisma:migrate:dev` - create and apply local migration
 - `npm run prisma:migrate:deploy` - apply migrations in deployment
@@ -70,3 +71,7 @@ GitHub Actions workflow runs on push/PR:
 3. Lint
 4. Typecheck
 5. Test
+
+## Contract Compatibility
+
+See `docs/API_CONTRACT_TESTING.md` for the contract testing workflow used to prevent web/mobile breaking changes.
