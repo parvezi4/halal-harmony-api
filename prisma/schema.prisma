@@ -1,0 +1,355 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id             String    @id @default(cuid())
+  email          String    @unique
+  passwordHash   String
+  role           UserRole  @default(MEMBER)
+  emailVerified  DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  profile        Profile?
+  subscriptions  Subscription[]
+  threadsA       MessageThread[] @relation("ThreadParticipantA")
+  threadsB       MessageThread[] @relation("ThreadParticipantB")
+  messages       Message[]
+  reportsFiled   Report[]        @relation("ReportsFiledByUser")
+  reportsAgainst Report[]        @relation("ReportsAgainstUser")
+  favorites      Favorite[]      @relation("UserFavorites")
+  favoritedBy    Favorite[]      @relation("UserFavoritedBy")
+  profileViews   ProfileView[]   @relation("ViewerProfileViews")
+  moderationAuditLogs       ModerationAuditLog[]      @relation("ModerationActor")
+  paymentCommunicationLogsAuthored PaymentCommunicationLog[] @relation("PaymentLogActor")
+  paymentCommunicationLogsForMember PaymentCommunicationLog[] @relation("PaymentLogMember")
+  moderationConfigUpdates   ModeratorPermissionConfig[] @relation("PermissionConfigUpdatedBy")
+  warningsReceived          ModerationWarning[]        @relation("WarningRecipient")
+  warningsIssued            ModerationWarning[]        @relation("WarningIssuer")
+  adminAccount              AdminAccount?
+  memberAccount             MemberAccount?
+}
+
+enum UserRole {
+  MEMBER
+  SUPERADMIN
+  ADMIN
+  MODERATOR
+}
+
+enum RiskLabel {
+  GREEN
+  AMBER
+  RED
+}
+
+model Profile {
+  id                String          @id @default(cuid())
+  userId            String          @unique
+  user              User            @relation(fields: [userId], references: [id])
+
+  // Onboarding completion tracking
+  onboardingCompletedAt DateTime?
+
+  // Step 1: Basic Info (Mandatory)
+  fullName          String?
+  alias             String?
+  gender            Gender
+  dateOfBirth       DateTime?
+  ageRangeLabel     String? // e.g. "25–30" if hiding exact age
+  country           String?
+  city              String?
+  region            String?
+  nationality       String?
+  ethnicity         String?
+
+  // Step 2: Islamic Details (Mandatory)
+  practicingLevel   String? // e.g. "Very practicing", "Practicing", "Moderate", etc.
+  prayerHabit       String? // e.g. "5 times daily", "Regularly", "Sometimes", "Rarely", "Never"
+  height            String? // e.g. "175cm" or height in cm
+  weight            Int? // weight in kg
+  bodyShape         String? // e.g. "Athletic", "Average", "Curvy", "Muscular", "Plus-size"
+  hijabOrBeard      String? // for females: "Niqab", "Hijab", "Headscarf"; for males: "Full beard", "Trimmed", "Clean shaven"
+  madhhabOrManhaj   String? // Hanafi, Maliki, Shafi'i, Hanbali
+  smoking           Boolean? @default(false)
+
+  // Step 3: Marital & Family (Mandatory)
+  maritalStatus     String? // Female: "virgin", "divorced", "annulled"; Male: "virgin", "married", "separated"
+  numberOfChildren  Int? @default(0)
+  childrenLivingWithMe Int?
+  willingToRelocate String? // "yes", "maybe", "no"
+  relocateNotes     String?
+
+  // Step 4: Preferences (Mandatory)
+  spouseStatusPreferences String? // JSON array of acceptable statuses for spouse, e.g. ["virgin", "divorced"]
+
+  // Step 5: Wali Info (Mandatory for females, N/A for males)
+  waliName          String?
+  waliRelationship  String?
+  waliEmail         String?
+  waliPhone         String?
+
+  // Additional profile fields (optional, can be filled later)
+  about             String?
+  familyBackground  String?
+  education         String?
+  profession        String?
+  preferences       String?
+
+  // Privacy & visibility
+  showExactAge      Boolean   @default(true)
+  showExactCity     Boolean   @default(true)
+  photosVisibleTo   PhotoVisibility @default(SUBSCRIBERS_ONLY)
+
+  status            ProfileStatus    @default(PENDING_REVIEW)
+  riskLabel         RiskLabel        @default(GREEN)
+  riskNotes         String?
+  riskLabeledAt     DateTime?
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+
+  photos            Photo[]
+  viewedBy          ProfileView[]
+}
+
+model ModeratorPermissionConfig {
+  id                      String   @id @default(cuid())
+  canModerateMessages     Boolean  @default(true)
+  canVerifyProfiles       Boolean  @default(true)
+  canVerifyPhotos         Boolean  @default(true)
+  canManageMembers        Boolean  @default(true)
+  canInspectSubscriptions Boolean  @default(true)
+  canManageReports        Boolean  @default(true)
+  canUpdateRiskLabels     Boolean  @default(true)
+  updatedById             String?
+  updatedBy               User?    @relation("PermissionConfigUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+}
+
+model AdminAccount {
+  id           String   @id @default(cuid())
+  userId       String   @unique
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  gender       Gender
+  email        String   @unique
+  passwordHash String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model MemberAccount {
+  id           String   @id @default(cuid())
+  userId       String   @unique
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  email        String   @unique
+  passwordHash String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model ModerationAuditLog {
+  id         String   @id @default(cuid())
+  actorId    String
+  actor      User     @relation("ModerationActor", fields: [actorId], references: [id], onDelete: Cascade)
+  action     String
+  targetType String
+  targetId   String
+  reason     String?
+  metadata   Json?
+  createdAt  DateTime @default(now())
+
+  @@index([actorId, createdAt])
+  @@index([targetType, targetId])
+}
+
+model PaymentCommunicationLog {
+  id        String   @id @default(cuid())
+  actorId   String
+  actor     User     @relation("PaymentLogActor", fields: [actorId], references: [id], onDelete: Cascade)
+  memberId  String
+  member    User     @relation("PaymentLogMember", fields: [memberId], references: [id], onDelete: Cascade)
+  eventType String
+  reason    String
+  status    String
+  note      String?
+  createdAt DateTime @default(now())
+
+  @@index([actorId, createdAt])
+  @@index([memberId, createdAt])
+}
+
+enum Gender {
+  MALE
+  FEMALE
+}
+
+enum ProfileStatus {
+  PENDING_REVIEW
+  APPROVED
+  SUSPENDED
+}
+
+enum PhotoVisibility {
+  HIDDEN
+  SUBSCRIBERS_ONLY
+  ALL_MEMBERS
+}
+
+model Photo {
+  id         String  @id @default(cuid())
+  profileId  String
+  profile    Profile @relation(fields: [profileId], references: [id])
+  url        String
+  mimeType   String
+  fileSizeBytes Int
+  isPrimary  Boolean @default(false)
+  isApproved Boolean @default(false)
+  isBlurred  Boolean @default(true)
+  createdAt  DateTime @default(now())
+}
+
+model Favorite {
+  id             String   @id @default(cuid())
+  userId         String
+  favoriteUserId String
+  createdAt      DateTime @default(now())
+
+  user         User @relation("UserFavorites", fields: [userId], references: [id], onDelete: Cascade)
+  favoriteUser User @relation("UserFavoritedBy", fields: [favoriteUserId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, favoriteUserId])
+  @@index([userId])
+  @@index([favoriteUserId])
+}
+
+model ProfileView {
+  id            String   @id @default(cuid())
+  viewerId      String
+  viewedProfileId String
+  viewedAt      DateTime @default(now())
+
+  viewer       User    @relation("ViewerProfileViews", fields: [viewerId], references: [id], onDelete: Cascade)
+  viewedProfile Profile @relation(fields: [viewedProfileId], references: [id], onDelete: Cascade)
+
+  @@index([viewerId, viewedAt])
+  @@index([viewedProfileId])
+}
+
+model SubscriptionPlan {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  stripePriceId String @unique
+  durationDays Int
+  isActive    Boolean  @default(true)
+
+  subscriptions Subscription[]
+}
+
+model Subscription {
+  id                  String            @id @default(cuid())
+  userId              String
+  user                User              @relation(fields: [userId], references: [id])
+  planId              String?
+  plan                SubscriptionPlan? @relation(fields: [planId], references: [id])
+  status              SubscriptionStatus @default(ACTIVE)
+  startDate           DateTime
+  endDate             DateTime
+  stripeCustomerId    String?
+  stripeSubscriptionId String?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  EXPIRED
+  CANCELLED
+}
+
+model MessageThread {
+  id             String   @id @default(cuid())
+  participantAId String
+  participantA   User     @relation("ThreadParticipantA", fields: [participantAId], references: [id])
+  participantBId String
+  participantB   User     @relation("ThreadParticipantB", fields: [participantBId], references: [id])
+
+  createdAt      DateTime @default(now())
+  lastMessageAt  DateTime @default(now())
+  isBlocked      Boolean  @default(false)
+
+  messages       Message[]
+  reports        Report[]
+}
+
+model Message {
+  id         String         @id @default(cuid())
+  threadId   String
+  thread     MessageThread  @relation(fields: [threadId], references: [id])
+  senderId   String
+  sender     User           @relation(fields: [senderId], references: [id])
+  content    String
+  createdAt  DateTime       @default(now())
+  isRead     Boolean        @default(false)
+  
+  // Content moderation fields
+  isFlagged        Boolean           @default(false)
+  flaggedReason    String?
+  moderationStatus ModerationStatus  @default(APPROVED)
+  warnings         ModerationWarning[]
+
+  @@index([moderationStatus])
+  @@index([threadId, createdAt])
+}
+
+enum ModerationStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model ModerationWarning {
+  id          String   @id @default(cuid())
+  recipientId String
+  recipient   User     @relation("WarningRecipient", fields: [recipientId], references: [id], onDelete: Cascade)
+  issuerId    String
+  issuer      User     @relation("WarningIssuer", fields: [issuerId], references: [id], onDelete: Cascade)
+  messageId   String
+  message     Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  content     String
+  createdAt   DateTime @default(now())
+
+  @@index([recipientId, createdAt])
+  @@index([issuerId, createdAt])
+  @@index([messageId])
+}
+
+model Report {
+  id               String   @id @default(cuid())
+  reporterId       String
+  reporter         User     @relation("ReportsFiledByUser", fields: [reporterId], references: [id])
+  reportedUserId   String?
+  reportedUser     User?    @relation("ReportsAgainstUser", fields: [reportedUserId], references: [id])
+  messageThreadId  String?
+  messageThread    MessageThread? @relation(fields: [messageThreadId], references: [id])
+
+  reason           String
+  status           ReportStatus @default(OPEN)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+}
+
+enum ReportStatus {
+  OPEN
+  REVIEWING
+  RESOLVED
+  DISMISSED
+}
+
